@@ -136,8 +136,24 @@
 			<version>${spek.version}</version>
 			<scope>test</scope>
 		</dependency>
+
+		<!-- add junit dependency for intellij  -->
+		<!-- https://youtrack.jetbrains.com/issue/IDEA-170817 -->
+		<dependency>
+			<groupId>org.junit.platform</groupId>
+			<artifactId>junit-platform-launcher</artifactId>
+			<version>${junit.platform.version}</version>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.junit.platform</groupId>
+			<artifactId>junit-platform-runner</artifactId>
+			<version>${junit.platform.version}</version>
+			<scope>test</scope>
+		</dependency>
+
 	</dependencies>
-	
+
 	<repositories>
 	    <repository>
 	        <id>jcenter</id>

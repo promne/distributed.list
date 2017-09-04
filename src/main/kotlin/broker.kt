@@ -33,5 +33,12 @@ class MessageBroker() {
 		val partitionIds = getPartitionIds(message.senderId)
 		workers.filter { it.value.intersect(partitionIds).isNotEmpty() }.forEach {it.key.consumeMessage(message)}
     }
+
+    override fun toString(): String {
+		return workers
+				.map { it.key.getListenerId() to it.value.sortedBy { it } }
+				.sortedBy { it.first }
+				.joinToString(prefix = "MessageBroker(",postfix = ")")
+    }
 }
 

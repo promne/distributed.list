@@ -16,63 +16,88 @@ class BrokerSpek : Spek({
 
 		
     describe("a cluster of three") {
-        val listeners = (0..2).map { DummyMessageBrokerListener(it) }.toList()
-		val broker = MessageBroker()
+		val listenerRange = (0..2)
+        val listeners = listenerRange.map { DummyMessageBrokerListener(it) }.toList()
 
 		beforeEachTest {
 			listeners.forEach(DummyMessageBrokerListener::clear)
-			broker.unregisterAll()
-		}
-		
-        on("connected") {
-			listeners.forEach {broker.register(it, false)}
-			
-			it("sends to everyone") {
-				for (i in 0..2) {
-					broker.dispatchMessage(Message(i.toString(), "sender $i"))
-					assertTrue(listeners.all { it.messages.size == i + 1 })
-				}				
-			}
-				
 		}
 
-		on("disconnected") {
-        	listeners.forEach {broker.register(it, false, setOf(it.id.toInt()))}
-        	
-        	it("sends only to itself") {
-        		for (i in 0..2) {
-        			broker.dispatchMessage(Message(i.toString(), "sender $i"))
-        			assertTrue(listeners.filter { it.id <=i }.all { it.messages.size == 1 })
-					assertTrue(listeners.filter { it.id > i }.all { it.messages.size == 0 })
-        		}
-        		
-        	}        	
+        describe("in the same partition") {
+            val broker = MessageBroker()
+            listeners.forEach {broker.register(it, false)}
+
+			on("broadcast") {
+                for (i in listenerRange) {
+                    broker.dispatchMessage(Message(i.toString(), "sender $i"))
+                }
+
+				it("delivers all messages to everyone") {
+                    listeners.forEach {
+						assertEquals(3, it.messages.size)
+						for (i in listenerRange) {
+                            assertTrue(it.messages.any { it.senderId== i.toString() })
+                        }
+                    }
+				}
+			}
+
+		}
+
+		describe("each in separate partition") {
+            val broker = MessageBroker()
+			listeners.forEach { broker.register(it, false, setOf(it.id.toInt())) }
+
+			on("broadcast") {
+                for (i in listenerRange) {
+                    broker.dispatchMessage(Message(i.toString(), "sender $i"))
+                }
+
+                it("delivers messages only to itself") {
+                    listeners.forEach { listener ->
+                        assertEquals(1, listener.messages.size)
+                        assertTrue(listener.messages.any { it.senderId==listener.getListenerId() })
+                    }
+                }
+
+			}
+
         }
 
-		on("shared partition") {
+		describe("partitions bridged by listener 2") {
+            val broker = MessageBroker()
         	listeners.forEach {broker.register(it, false, setOf(it.id.toInt()))}
         	broker.register(listeners[2], true, setOf(0,1))
-			
-        	it("0 sends to itself and shared") {
-    			broker.dispatchMessage(Message("0", "data"))
-    			assertEquals(1, listeners[0].messages.size)
-    			assertEquals(0, listeners[1].messages.size)
-    			assertEquals(1, listeners[2].messages.size)				
-        	}        	
 
-        	it("1 sends to itself and shared") {
+        	on("broadcasts from 0") {
+    			broker.dispatchMessage(Message("0", "data"))
+
+				it("delivers to itself and shared") {
+					assertEquals(1, listeners[0].messages.size)
+					assertEquals(0, listeners[1].messages.size)
+					assertEquals(1, listeners[2].messages.size)
+				}
+        	}
+
+        	on("broadcasts from 1") {
     			broker.dispatchMessage(Message("1", "data"))
-    			assertEquals(0, listeners[0].messages.size)
-    			assertEquals(1, listeners[1].messages.size)
-    			assertEquals(1, listeners[2].messages.size)				
-        	}        	
-			
-        	it("2 sends to all") {
+
+				it("delivers to itself and shared") {
+					assertEquals(0, listeners[0].messages.size)
+					assertEquals(1, listeners[1].messages.size)
+					assertEquals(1, listeners[2].messages.size)
+				}
+        	}
+
+        	on("broadcasts from 2") {
     			broker.dispatchMessage(Message("2", "data"))
-    			assertEquals(1, listeners[0].messages.size)
-    			assertEquals(1, listeners[1].messages.size)
-    			assertEquals(1, listeners[2].messages.size)								
-        	}        	
+
+				it ("delivers to all") {
+					assertEquals(1, listeners[0].messages.size)
+					assertEquals(1, listeners[1].messages.size)
+					assertEquals(1, listeners[2].messages.size)
+				}
+        	}
         }
 				
     }

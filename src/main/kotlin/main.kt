@@ -1,7 +1,6 @@
 import broker.MessageBroker
 import com.beust.jcommander.Parameter
 import com.beust.jcommander.Parameters
-import command.JCommandUserException
 import java.util.concurrent.Executors
 
 @Parameters(commandNames = arrayOf("help"), commandDescription = "show help")
@@ -10,8 +9,8 @@ class HelpCommand {}
 @Parameters(commandNames = arrayOf("exit"), commandDescription = "Exit the CLI")
 class ExitCommand {}
 
-@Parameters(commandNames = arrayOf("start"), commandDescription = "number of workers to start")
-class StartCommand {
+@Parameters(commandNames = arrayOf("run"), commandDescription = "number of workers to start")
+class RunCommand {
     @Parameter(required = true)
     var workersCount: String = "0"
 }
@@ -28,10 +27,10 @@ class SendCommand {
 @Parameters(commandNames = arrayOf("partition"), commandDescription = "Assign partition id to workers")
 class PartitionCommand {
     @Parameter(names=arrayOf("--partitions","-p"), required = true, description="list of partition ids separated by comma")
-    var partitions: Set<Int> = mutableSetOf()
+    var partitions: List<Int> = mutableListOf()
 
     @Parameter(names=arrayOf("--workers","-w"), required = true, description="list of worker ids separated by comma")
-    var workers: Set<String> = mutableSetOf()
+    var workers: List<String> = mutableListOf()
 }
 
 @Parameters(commandNames = arrayOf("heal"), commandDescription = "Puts all workers into single partition")
@@ -58,8 +57,8 @@ fun main(args: Array<String>) {
         cli.getJCommander().usage(console)
     }
 
-    cli.registerCommand(StartCommand::class) { command, console ->
-		0.rangeTo(Integer.valueOf(command.workersCount) - 1)
+    cli.registerCommand(RunCommand::class) { command, console ->
+        (0 until Integer.valueOf(command.workersCount))
 			.map { Worker(it.toString(), broker) }
 			.forEach {
 				workerThreads.add(it)
@@ -71,7 +70,7 @@ fun main(args: Array<String>) {
 
     cli.registerCommand(PartitionCommand::class) { command, console ->
 		command.workers.forEach {
-			broker.register(getWorkerById(it), false, command.partitions)
+			broker.register(getWorkerById(it), false, command.partitions.toSet())
 		}		
         console.appendln("Completed")
     }
@@ -82,19 +81,22 @@ fun main(args: Array<String>) {
 
 
     cli.registerCommand(StatusCommand::class) { _, console ->
+        val sb = StringBuilder()
+        sb.appendln("Broker: $broker")
+        sb.appendln()
         workerThreads.forEach {
-            val sb = StringBuilder()
             sb.appendln("Worker id: ${it.id}")
             sb.appendln("Partition ids: ${broker.getPartitionIds(it)}")
             sb.appendln("Clock: ${it.myClock}")
             sb.appendln("Received: ${it.receivedQueue}")
             sb.appendln("My: ${it.myQueue}")
-            console.appendln(sb)
+            sb.appendln()
         }
+        console.append(sb)
     }
 
     cli.registerCommand(SendCommand::class) { command, console ->
-        workerThreads.filter { it.id == command.senderAndMessage[0] }.forEach { it.sendMessage(command.senderAndMessage[1]) }
+        getWorkerById(command.senderAndMessage[0]).sendMessage(command.senderAndMessage[1])
         console.appendln("Completed")
     }
 
