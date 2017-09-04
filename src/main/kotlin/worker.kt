@@ -1,21 +1,26 @@
+import broker.Message
+import broker.MessageBroker
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicBoolean
+import broker.MessageBrokerListener
 
 data class WorkerItem(val timestamp: VectorTimestamp<String>, val data: String, val time: Long = System.nanoTime())
 
-class Worker(val id: String, val broker: MessageBroker) : Runnable {
+class Worker(val id: String, val broker: MessageBroker) : Runnable, MessageBrokerListener {
 
-    val myQueue = mutableListOf<WorkerItem>()
+	val myQueue = mutableListOf<WorkerItem>()
     val receivedQueue = ConcurrentLinkedQueue<Message>()
     private val stopRunner = AtomicBoolean(false)
     var myClock = VectorClock<String>(id)
 
-    fun queueReceivedMessage(message: Message) {
+	override fun consumeMessage(message: Message) {
         if (message.senderId != id) {
             receivedQueue.add(message)
         }
-    }
+	}
 
+	override fun getListenerId(): String = id
+	
     fun stopWorker() = stopRunner.set(true)
 
     fun sendMessage(data: String) {

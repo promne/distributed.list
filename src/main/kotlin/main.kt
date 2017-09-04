@@ -1,7 +1,7 @@
+import broker.MessageBroker
 import com.beust.jcommander.Parameter
 import com.beust.jcommander.Parameters
 import command.JCommandUserException
-import java.lang.StringBuilder
 import java.util.concurrent.Executors
 
 @Parameters(commandNames = arrayOf("help"), commandDescription = "show help")
@@ -27,8 +27,11 @@ class SendCommand {
 
 @Parameters(commandNames = arrayOf("partition"), commandDescription = "Assign partition id to workers")
 class PartitionCommand {
-    @Parameter(required = true)
-    var partitionAndWorkers: List<String> = mutableListOf()
+    @Parameter(names=arrayOf("--partitions","-p"), required = true, description="list of partition ids separated by comma")
+    var partitions: Set<Int> = mutableSetOf()
+
+    @Parameter(names=arrayOf("--workers","-w"), required = true, description="list of worker ids separated by comma")
+    var workers: Set<String> = mutableSetOf()
 }
 
 @Parameters(commandNames = arrayOf("heal"), commandDescription = "Puts all workers into single partition")
@@ -47,6 +50,7 @@ fun main(args: Array<String>) {
     val workerThreads = mutableListOf<Worker>()
     val broker = MessageBroker()
 
+	fun getWorkerById(workerId: String) = workerThreads.filter { it.id == workerId}.singleOrNull() ?: throw IllegalArgumentException("Unknown worker with id: $workerId")
 
     val cli = JLineCLI()
 
@@ -55,22 +59,24 @@ fun main(args: Array<String>) {
     }
 
     cli.registerCommand(StartCommand::class) { command, console ->
-        workerThreads.addAll(
-                0.rangeTo(Integer.valueOf(command.workersCount) - 1).map { Worker(it.toString(), broker) }
-        )
-        broker.register(workerThreads)
+		0.rangeTo(Integer.valueOf(command.workersCount) - 1)
+			.map { Worker(it.toString(), broker) }
+			.forEach {
+				workerThreads.add(it)
+				broker.register(it, false)
+			}
         workerThreads.forEach { threadPool.submit(it) }
         console.appendln("Completed")
     }
 
     cli.registerCommand(PartitionCommand::class) { command, console ->
-        val partitionId: Int = command.partitionAndWorkers.getOrElse(0) { throw JCommandUserException("Partition id has to be specified") }.toInt()
-        val workerIds = command.partitionAndWorkers.subList(1, command.partitionAndWorkers.size)
-        broker.partition(partitionId, workerIds)
+		command.workers.forEach {
+			broker.register(getWorkerById(it), false, command.partitions)
+		}		
         console.appendln("Completed")
     }
     cli.registerCommand(HealCommand::class) { _, console ->
-        broker.partition(0, workerThreads.map { it.id })
+		workerThreads.forEach { broker.register(it, false) }
         console.appendln("Completed")
     }
 
@@ -79,7 +85,7 @@ fun main(args: Array<String>) {
         workerThreads.forEach {
             val sb = StringBuilder()
             sb.appendln("Worker id: ${it.id}")
-            sb.appendln("Partition id: ${broker.gerPartitionId(it.id)}")
+            sb.appendln("Partition ids: ${broker.getPartitionIds(it)}")
             sb.appendln("Clock: ${it.myClock}")
             sb.appendln("Received: ${it.receivedQueue}")
             sb.appendln("My: ${it.myQueue}")

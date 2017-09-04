@@ -1,24 +1,37 @@
+package broker
+
+import Worker
+
 data class Message(val senderId: String, val data: Any)
+
+interface MessageBrokerListener {
+	fun consumeMessage(message: Message)
+	fun getListenerId() : String
+}  
 
 class MessageBroker() {
 
-    private val workers = mutableMapOf<String, Pair<Worker, Int>>()
+    private val workers = mutableMapOf<MessageBrokerListener, MutableSet<Int>>()
 
-    fun register(addWorkers: Collection<Worker>, partitionId: Int = 0) {
-        addWorkers.forEach {
-            workers.put(it.id, it to partitionId)
-        }
-    }
-
-    fun gerPartitionId(workerId: String) = workers.getOrElse(workerId) { throw IllegalArgumentException("Unknown worker: $workerId") }.second
-
-    fun partition(partitionId: Int, workerIds: Collection<String>) {
-        register(workerIds.map { workers.getOrElse(it) { throw IllegalArgumentException("Unknown worker: $it") }.first }, partitionId)
-    }
+    fun register(messageListener: MessageBrokerListener, addPartitions: Boolean = true, partitionIds: Set<Int> = setOf(0) ) {
+		if (addPartitions) {
+			workers.getOrPut(messageListener, { mutableSetOf<Int>() }).addAll(partitionIds)			
+		} else {
+			workers[messageListener] = partitionIds.toMutableSet()
+		}
+	}
+	
+    fun unregister(messageListener: MessageBrokerListener) = workers.remove(messageListener)
+	
+	fun unregisterAll() = workers.clear()
+	
+	fun getPartitionIds(listener: MessageBrokerListener) = getPartitionIds(listener.getListenerId())
+	
+    fun getPartitionIds(listenerId: String) = workers.filterKeys { it.getListenerId() == listenerId }.map { it.value }.singleOrNull()?: throw IllegalArgumentException("Unknown listener with id: $listenerId")
 
     fun dispatchMessage(message: Message) {
-        val partitionId = workers.getOrElse(message.senderId) { throw IllegalArgumentException("Unknown worker: ${message.senderId}") }.second
-        workers.filter { it.value.second == partitionId }.forEach { it.value.first.queueReceivedMessage(message) }
+		val partitionIds = getPartitionIds(message.senderId)
+		workers.filter { it.value.intersect(partitionIds).isNotEmpty() }.forEach {it.key.consumeMessage(message)}
     }
 }
 
